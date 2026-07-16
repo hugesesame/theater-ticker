@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STAGE NEWS - TICKER</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700&family=Share+Tech+Mono&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0a;
+    --amber: #e8a825;
+    --amber-dim: #7a5510;
+    --white: #f5ead8;
+    --dim: #3a3028;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    cursor: none;
+  }
+
+  /* ========== 3段レイアウト ========== */
+  .screen {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* --- 上段: 時刻 + 日付 --- */
+  .top-bar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 2vh 4vw 1vh;
+    border-bottom: 2px solid var(--amber-dim);
+  }
+
+  .clock {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12vh;
+    line-height: 1;
+    color: var(--amber);
+    letter-spacing: -0.02em;
+    text-shadow: 0 0 60px rgba(232,168,37,0.4);
+  }
+
+  .date-block {
+    text-align: right;
+  }
+
+  .date-line {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 6vh;
+    color: var(--amber-dim);
+    letter-spacing: 0.15em;
+  }
+
+  .logo-line {
+    display: none;
+  }
+
+  /* --- 中段: メインヘッドライン (1件ずつフェード) --- */
+  .headline-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    padding: 0 4vw;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .headline-text {
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: clamp(28px, 5.5vw, 72px);
+    font-weight: 700;
+    color: var(--white);
+    line-height: 1.4;
+    letter-spacing: 0.03em;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+    position: absolute;
+    width: calc(100% - 8vw);
+  }
+
+  .headline-text.visible { opacity: 1; }
+
+  .headline-source {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: clamp(12px, 1.8vw, 22px);
+    color: var(--amber-dim);
+    letter-spacing: 0.2em;
+    margin-top: 1.5vh;
+    display: block;
+  }
+
+  .headline-tag {
+    display: inline-block;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: clamp(10px, 1.4vw, 18px);
+    letter-spacing: 0.2em;
+    padding: 3px 14px;
+    border: 2px solid currentColor;
+    margin-bottom: 2vh;
+    text-transform: uppercase;
+    vertical-align: middle;
+  }
+
+  .tag-politics { color: #e74c3c; }
+  .tag-economy  { color: #5dade2; }
+  .tag-sports   { color: #2ecc71; }
+  .tag-world    { color: #a78bfa; }
+  .tag-life     { color: #f9a8d4; }
+  .tag-tech     { color: #67e8f9; }
+  .tag-misc     { color: var(--amber-dim); }
+  .tag-enta     { color: #fb923c; }
+  .tag-weather  { color: #fde047; }
+  .tag-market   { color: #34d399; }
+  .tag-ai       { color: #a3e635; }
+
+  /* --- 下段: 横スクロールティッカー --- */
+  .ticker-wrap {
+    flex: 0 0 auto;
+    border-top: 3px solid var(--amber);
+    background: var(--amber);
+    padding: 2.7vh 0;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .ticker-label {
+    display: none;
+  }
+
+  .ticker-track {
+    display: inline-block;
+    white-space: nowrap;
+    padding-left: 0;
+    will-change: transform;   /* スクロールはJS(rAF)駆動。CSSアニメは使わない */
+  }
+
+  .ticker-item {
+    display: inline-block;
+    white-space: nowrap;
+    font-family: 'Noto Sans JP', sans-serif;
+    font-size: clamp(28px, 4.4vh, 52px);
+    color: #1a0e00;
+    font-weight: 700;
+    padding: 0 60px 0 0;
+    letter-spacing: 0.02em;
+  }
+
+  .ticker-item::after {
+    content: '◆';
+    margin-left: 60px;
+    opacity: 0.35;
+  }
+
+  @keyframes tickerScroll {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+
+  /* --- スキャンライン演出 --- */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent, transparent 3px,
+      rgba(0,0,0,0.04) 3px, rgba(0,0,0,0.04) 6px
+    );
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  /* --- カーソル非表示時のクリックヒント --- */
+  .hint {
+    position: fixed;
+    bottom: 12vh;
+    right: 3vw;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 1.2vh;
+    color: var(--dim);
+    letter-spacing: 0.2em;
+    z-index: 100;
+    opacity: 0;
+    animation: fadeHint 6s ease 2s forwards;
+  }
+
+  @keyframes fadeHint {
+    0%   { opacity: 0; }
+    20%  { opacity: 1; }
+    80%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="screen">
+  <!-- 上段 -->
+  <div class="top-bar">
+    <div class="clock" id="clock">--:--</div>
+    <div class="date-block">
+      <div class="date-line" id="dateline">---- -- --</div>
+      <div class="logo-line">STAGE // NEWS</div>
+    </div>
+  </div>
+
+  <!-- 中段 -->
+  <div class="headline-wrap">
+    <div class="headline-text" id="headline">
+      <span class="headline-tag tag-misc">LOADING</span><br>
+      ニュースを取得しています...
+      <span class="headline-source">—</span>
+    </div>
+  </div>
+
+  <!-- 下段 -->
+  <div class="ticker-wrap">
+    <div class="ticker-label">NEWS</div>
+    <div class="ticker-track" id="tickerTrack"></div>
+  </div>
+</div>
+
+<div class="hint">CLICK TO REFRESH</div>
+
+<script>
+// =============================================
+// ★ GAS URL をここに貼る ★
+// =============================================
+const GAS_URL = 'https://script.google.com/macros/s/AKfycby2joD0OaeWiCpXvAqttYNn7tzoR7_yC99A7QU9VDg48RDB2vXCB7oM55jwFfo73xaoTg/exec';
+// =============================================
+
+
+// =============================================
+// 鮮度フィルタ: 直近のニュースだけを新しい順に。
+// 24h以内で5件未満なら48h→全件と段階的に緩和（画面が空になるのを防ぐ）
+// =============================================
+const FRESH_HOURS = 24;
+const MIN_ARTICLES = 5;
+
+function freshSort(list) {
+  const now = Date.now();
+  const withT = list.map(a => {
+    const t = a.time ? Date.parse(a.time) : NaN;
+    return { ...a, _t: isNaN(t) ? null : t };
+  });
+  const within = h => withT.filter(a => a._t !== null && now - a._t <= h * 3600 * 1000);
+  let picked = within(FRESH_HOURS);
+  if (picked.length < MIN_ARTICLES) picked = within(FRESH_HOURS * 2);
+  if (picked.length < MIN_ARTICLES) picked = withT;          // 全部古い/時刻なし → 全件
+  picked.sort((a, b) => (b._t ?? 0) - (a._t ?? 0));           // 新しい順
+  return picked;
+}
+
+// 豆知識をN件おきに挟む（ニュースは新しい順のまま）
+function interleaveMisc(news, misc, every = 5) {
+  const out = [];
+  let m = 0;
+  news.forEach((a, i) => {
+    out.push(a);
+    if ((i + 1) % every === 0 && m < misc.length) out.push(misc[m++]);
+  });
+  while (m < misc.length) out.push(misc[m++]);
+  return out;
+}
+
+// 外部データ（RSSタイトル等）のHTMLエスケープ
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+
+// =============================================
+// 天気カード（Open-Meteo・キー不要）: ヘッドラインに定期的に挟む
+// 場所を変えるときはここを編集
+// =============================================
+const WEATHER_LAT = 35.44, WEATHER_LON = 139.64, WEATHER_PLACE = '横浜';
+const WX_EMOJI = c =>
+  c===0?'☀️':c<=2?'🌤️':c===3?'☁️':c<=48?'🌫️':c<=57?'🌦️':c<=67?'🌧️':
+  c<=77?'🌨️':c<=82?'🌧️':c<=86?'❄️':'⛈️';
+
+function buildMarketItem(m) {
+  if (!m || (m.usdjpy == null && m.nikkei == null)) return null;
+  const parts = [];
+  if (m.usdjpy != null) parts.push(`USD/JPY ${Number(m.usdjpy).toFixed(2)}`);
+  if (m.nikkei != null) parts.push(`日経平均 ${Number(m.nikkei).toLocaleString('ja-JP', {maximumFractionDigits: 0})}円`);
+  return {
+    title: `💹 ${parts.join('　・　')}`,
+    genre: 'market', source: 'Stooq', time: new Date().toISOString(),
+  };
+}
+
+async function fetchWeatherItem() {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${WEATHER_LAT}&longitude=${WEATHER_LON}` +
+      `&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1`;
+    const wx = await (await fetch(url)).json();
+    const t = Math.round(wx.current.temperature_2m);
+    const hi = Math.round(wx.daily.temperature_2m_max[0]);
+    const lo = Math.round(wx.daily.temperature_2m_min[0]);
+    const pop = wx.daily.precipitation_probability_max[0];
+    return {
+      title: `${WEATHER_PLACE}の天気 ${WX_EMOJI(wx.current.weather_code)} ${t}°C　最高${hi}° / 最低${lo}°　降水確率${pop ?? '--'}%`,
+      genre: 'weather', source: 'Open-Meteo', time: new Date().toISOString(),
+    };
+  } catch(e) { return null; }
+}
+
+const MISC_FACTS = [
+  "人間の脳は1秒間に約100兆回の演算を行うとされる。",
+  "日本語の「木漏れ日」は他言語にほぼ翻訳不能な概念。",
+  "蛸の心臓は3つある。全身用1つ、えら用2つ。",
+  "東京スカイツリーは年間約40cm伸縮する。",
+  "音速は水中では空気中の約4.3倍速い。",
+  "「電気」という日本語訳は蘭学時代に生まれた。",
+  "富士山の初冠雪の平均日は10月2日頃。",
+  "人は1日に約7万回思考すると言われる。",
+  "世界最古の旅館は705年創業の慶雲館（山梨県）。",
+  "アリは自分の体重の50倍の重さを運べる。",
+];
+
+const TAG_LABELS = {
+  politics:'政治', economy:'経済', world:'国際',
+  sports:'スポーツ', tech:'テクノロジー', life:'社会', misc:'雑学', enta:'エンタメ', weather:'天気', market:'マーケット', ai:'AI'
+};
+
+let articles = [];
+let headlineIndex = 0;
+let headlineTimer = null;
+
+// =============================================
+// 時計
+// =============================================
+function updateClock() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,'0');
+  const mm = String(now.getMinutes()).padStart(2,'0');
+  document.getElementById('clock').textContent = `${hh}:${mm}`;
+
+  const days = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  const y = now.getFullYear();
+  const mo = String(now.getMonth()+1).padStart(2,'0');
+  const d  = String(now.getDate()).padStart(2,'0');
+  const wd = days[now.getDay()];
+  document.getElementById('dateline').textContent = `${y}.${mo}.${d} ${wd}`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// =============================================
+// ニュース取得
+// =============================================
+async function loadNews() {
+  let fetched = [], marketData = null;
+  try {
+    const res = await fetch(GAS_URL + (GAS_URL.includes('?') ? '&' : '?') + 't=' + Date.now(), { signal: AbortSignal.timeout(45000) });
+    if (res.ok) {
+      const json = await res.json();
+      fetched = json.articles || [];
+      marketData = json.market || null;
+    }
+  } catch(e) {}
+
+  // 更新に失敗しても、既にニュースを表示中ならそれを維持する。
+  // サンプルへのフォールバックは「起動直後で何も無い」時だけ
+  if (!fetched.length && articles.length) return;
+  const fresh = freshSort(fetched);
+  let list = fresh.length ? fresh : getSample();
+
+  // 天気カードを約10件おきにローテーションへ（取得失敗時はニュースのみ）
+  const wx = await fetchWeatherItem();
+  if (wx) {
+    // 30件おき（ヘッドライン6秒×30 ≒ 3分に1回）に天気を挟む
+    const copies = Array.from({length: Math.max(1, Math.ceil(list.length / 30))}, () => wx);
+    list = interleaveMisc(list, copies, 30);
+  }
+  articles = list;
+
+  renderTicker();
+  startHeadlines();
+}
+
+// =============================================
+// ティッカー（下段横スクロール）
+// =============================================
+// バッチ交代制 + JS駆動スクロール（requestAnimationFrame）
+// CSSアニメーションは使わず位置を自前管理する。バッチ交代は「1周分ちょうど流れた瞬間」に
+// 行うため、文字の重なりやジャンプは原理的に起きない。
+const TICKER_BATCH_SIZE = 60;
+const TICKER_SEC_PER_ITEM = 4.6;   // 1本あたりの秒数（大きいほど遅い）。速度調整はここだけ
+let tickerBatches = [];
+let tickerBatchIdx = 0;
+let tickerPos = 0;          // 現在のスクロール位置(px, 負方向へ進む)
+let tickerCopyW = 1;        // 1周分（1セット）の幅
+let tickerSpeed = 60;       // px/秒（バッチ内容から自動計算）
+let tickerLastT = null;
+
+function renderTicker() {
+  const items = articles.filter(a => a.genre !== 'misc' && a.genre !== 'weather' && a.genre !== 'market');
+  tickerBatches = [];
+  for (let i = 0; i < items.length; i += TICKER_BATCH_SIZE) {
+    tickerBatches.push(items.slice(i, i + TICKER_BATCH_SIZE));
+  }
+  if (tickerBatches.length >= 2 && tickerBatches[tickerBatches.length - 1].length < TICKER_BATCH_SIZE / 2) {
+    const tail = tickerBatches.pop();
+    tickerBatches[tickerBatches.length - 1].push(...tail);
+  }
+  if (tickerBatches.length === 0) tickerBatches = [items];
+  tickerBatchIdx = 0;
+  showTickerBatch();
+}
+
+function showTickerBatch() {
+  const batch = tickerBatches[tickerBatchIdx % tickerBatches.length] || [];
+  const track = document.getElementById('tickerTrack');
+  const html = batch.map(a => `<span class="ticker-item">${esc(a.title)}</span>`).join('');
+
+  // まず1セットだけ描画して幅を測る
+  track.innerHTML = html;
+  tickerCopyW = Math.max(1, track.scrollWidth);
+
+  // 画面幅より狭いバッチでも切れ目が見えないよう、必要なだけ複製（最低2セット）
+  const need = Math.max(2, Math.ceil((window.innerWidth * 1.5) / tickerCopyW) + 1);
+  track.innerHTML = html.repeat(need);
+
+  // 速度: 1周(1セット分)を「本数×秒/本」で流し切るpx/秒
+  tickerSpeed = tickerCopyW / Math.max(1, batch.length * TICKER_SEC_PER_ITEM);
+  tickerPos = 0;
+  track.style.transform = 'translateX(0px)';
+}
+
+function tickTicker(t) {
+  const track = document.getElementById('tickerTrack');
+  if (track && tickerBatches.length) {
+    if (tickerLastT === null) tickerLastT = t;
+    const dt = Math.min((t - tickerLastT) / 1000, 0.1);  // タブ復帰時の大ジャンプ防止
+    tickerLastT = t;
+    tickerPos -= tickerSpeed * dt;
+    if (-tickerPos >= tickerCopyW) {
+      // 1周分ちょうど流れた → 次のバッチへ交代（位置0から再スタートなので絶対に崩れない）
+      tickerBatchIdx++;
+      showTickerBatch();
+    } else {
+      track.style.transform = `translateX(${tickerPos.toFixed(1)}px)`;
+    }
+  } else {
+    tickerLastT = t;
+  }
+  requestAnimationFrame(tickTicker);
+}
+requestAnimationFrame(tickTicker);
+
+// リサイズ時は複製数と幅を取り直す
+window.addEventListener('resize', () => { if (tickerBatches.length) showTickerBatch(); });
+
+// =============================================
+// ヘッドライン（中段フェード切替）
+// =============================================
+function startHeadlines() {
+  if (headlineTimer) clearInterval(headlineTimer);
+  showHeadline();
+  headlineTimer = setInterval(showHeadline, 6000);
+}
+
+function shuffleInPlace(arr) {  // Fisher–Yates
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+function showHeadline() {
+  if (!articles.length) return;
+  // 1周目は新しい順のまま。2周目以降は毎周シャッフルして「並びの既視感」を消す
+  if (headlineIndex > 0 && headlineIndex % articles.length === 0) {
+    shuffleInPlace(articles);
+  }
+  const el = document.getElementById('headline');
+  const a = articles[headlineIndex % articles.length];
+  headlineIndex++;
+
+  // フェードアウト
+  el.classList.remove('visible');
+
+  setTimeout(() => {
+    const tag = TAG_LABELS[a.genre] || a.genre;
+    el.innerHTML = `
+      <span class="headline-tag tag-${esc(a.genre)}">${esc(tag)}</span><br>
+      ${esc(a.title)}
+      <span class="headline-source">${esc(a.source)}${a.time ? ' · ' + esc(formatTime(a.time)) : ''}</span>
+    `;
+    // フェードイン
+    el.classList.add('visible');
+  }, 800);
+}
+
+function formatTime(pubDate) {
+  try {
+    const d = new Date(pubDate);
+    if (isNaN(d)) return '';
+    return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  } catch { return ''; }
+}
+
+// =============================================
+// クリックでリフレッシュ
+// =============================================
+document.addEventListener('click', loadNews);
+
+// =============================================
+// フォールバック
+// =============================================
+function getSample() {
+  return [
+    { title: '首相官邸、経済対策の新パッケージを来週発表へ', genre: 'politics', source: 'サンプル', time: '' },
+    { title: '日経平均、終値3万9800円台で引け', genre: 'economy', source: 'サンプル', time: '' },
+    { title: '国連安保理、緊急会合を開催', genre: 'world', source: 'サンプル', time: '' },
+    { title: 'プロ野球 巨人が逆転サヨナラ勝ち', genre: 'sports', source: 'サンプル', time: '' },
+    { title: 'AI新モデル登場、処理速度が従来比3倍に', genre: 'tech', source: 'サンプル', time: '' },
+    ...MISC_FACTS.map(f => ({ title: f, genre: 'misc', source: '豆知識', time: '' })),
+  ];
+}
+
+// =============================================
+// 30分ごと自動更新
+// =============================================
+loadNews();
+setInterval(loadNews, 30 * 60 * 1000);
+</script>
+</body>
+</html>
